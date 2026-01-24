@@ -1,0 +1,104 @@
+name: Update IPTV Source
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    # 北京时间每天早上 6:00 运行 (UTC 22:00)
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+    # 允许手动运行
+
+jobs:
+  update-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: 初始化目录
+        run: |
+          # 建立分类文件夹
+          mkdir -p streams/txt
+          mkdir -p streams/m3u
+          # 清理旧数据
+          rm -f streams/txt/*
+          rm -f streams/m3u/*
+          rm -f all_live.txt
+          rm -f all_live.m3u
+
+      # ==========================
+      # 模块 1: 处理 TXT 格式
+      # ==========================
+      - name: 下载并合并 TXT
+        run: |
+          # 检查清单文件是否存在
+          if [ -f "list_txt.txt" ]; then
+            while IFS=, read -r name url; do
+              name=$(echo "$name" | xargs) # 去空格
+              url=$(echo "$url" | xargs)
+              if [[ -z "$name" || -z "$url" ]]; then continue; fi
+              
+              echo "正在下载 TXT: $name"
+              curl -s -L --retry 3 -o "streams/txt/${name}.txt" "$url" || echo "下载失败: $name"
+            done < list_txt.txt
+          fi
+
+          # 合并逻辑：检查是否有文件下载成功
+          if ls streams/txt/*.txt 1> /dev/null 2>&1; then
+            # 合并文件，并在每个文件之间加换行符，防止首尾粘连
+            awk 'FNR==1{print ""}1' streams/txt/*.txt > all_live.txt
+            # 去除文件开头可能的空行
+            sed -i '/^$/d' all_live.txt
+            echo "TXT 合并完成。"
+          else
+            echo "未找到 TXT 文件，跳过合并。"
+          fi
+
+      # ==========================
+      # 模块 2: 处理 M3U 格式
+      # ==========================
+      - name: 下载并合并 M3U
+        run: |
+          if [ -f "list_m3u.txt" ]; then
+            while IFS=, read -r name url; do
+              name=$(echo "$name" | xargs)
+              url=$(echo "$url" | xargs)
+              if [[ -z "$name" || -z "$url" ]]; then continue; fi
+              
+              echo "正在下载 M3U: $name"
+              curl -s -L --retry 3 -o "streams/m3u/${name}.m3u" "$url" || echo "下载失败: $name"
+            done < list_m3u.txt
+          fi
+
+          # 合并逻辑：M3U 需要特殊处理头部
+          if ls streams/m3u/*.m3u 1> /dev/null 2>&1; then
+            # 1. 创建一个新的标准头部
+            echo "#EXTM3U" > all_live.m3u
+            echo "#EXT-X-VERSION:3" >> all_live.m3u
+            
+            # 2. 读取下载的文件，使用 grep -v 剔除它们自带的头部，追加到总文件
+            cat streams/m3u/*.m3u | grep -v "^#EXTM3U" | grep -v "^#EXT-X-VERSION" >> all_live.m3u
+            
+            echo "M3U 合并完成。"
+          else
+             echo "未找到 M3U 文件，跳过合并。"
+          fi
+
+      # ==========================
+      # 模块 3: 提交结果
+      # ==========================
+      - name: 提交并推送
+        run: |
+          git config --global user.name "IPTV Bot"
+          git config --global user.email "actions@github.com"
+          
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "Auto-Update: 直播源更新 $(date +'%Y-%m-%d')"
+            git push
+            echo "更新成功！"
+          else
+            echo "文件无变化，无需提交。"
+          fi
