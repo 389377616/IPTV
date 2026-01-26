@@ -1,1 +1,2 @@
 wcb1969,https://raw.githubusercontent.com/wcb1969/iptv/refs/heads/main/%E6%B1%9F%E8%8B%8F%E7%94%B5%E4%BF%A1%E7%BB%84%E6%92%AD.txt
+Taosky,https://raw.githubusercontent.com/Taosky/iptv/refs/heads/main/%E7%9B%B4%E6%92%AD(DIYP%E6%A0%BC%E5%BC%8F).txt
