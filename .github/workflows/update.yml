@@ -17,55 +17,58 @@ jobs:
         uses: actions/checkout@v4
 
       # ==========================================
-      # 管道 1：专门处理 M3U 格式
+      # 管道 1：处理 M3U (支持 "名字,网址" 格式)
       # ==========================================
       - name: 合并 M3U 源文件
         run: |
-          # 1. 写入标准的 M3U 文件头
           echo "#EXTM3U" > all_live.m3u
           
-          # 2. 逐个下载 list_m3u.txt 中的链接
           if [ -f list_m3u.txt ]; then
-            while IFS= read -r url || [ -n "$url" ]; do
-              if [[ -n "$url" && "$url" != \#* ]]; then
-                echo "正在处理 M3U 源: $url"
-                # 下载并严格过滤掉多余的 #EXTM3U 头，防止格式损坏
-                curl -sL "$url" | grep -v "#EXTM3U" >> all_live.m3u
+            while IFS= read -r line || [ -n "$line" ]; do
+              # 过滤空行和注释
+              if [[ -n "$line" && "$line" != \#* ]]; then
+                # 核心修复：只取最后一个逗号后面的内容作为纯 URL
+                url="${line##*,}"
+                # 清除可能存在的 Windows 回车符(\r)和首尾空格
+                url=$(echo "$url" | tr -d '\r' | xargs)
+                
+                echo "正在下载 M3U 源: $url"
+                # 增加 --fail 参数，如果网址失效不中断整个流程
+                curl --fail -sL "$url" | grep -v "#EXTM3U" >> all_live.m3u || echo "⚠️ 下载失败，跳过: $url"
                 echo "" >> all_live.m3u
               fi
             done < list_m3u.txt
           fi
 
       # ==========================================
-      # 管道 2：专门处理 TXT 格式
+      # 管道 2：处理 TXT (同样支持 "名字,网址" 格式)
       # ==========================================
       - name: 合并 TXT 源文件
         run: |
-          # 1. 清空或创建 TXT 文件
           > all_live.txt
           
-          # 2. 逐个下载 list_txt.txt 中的链接
           if [ -f list_txt.txt ]; then
-            while IFS= read -r url || [ -n "$url" ]; do
-              if [[ -n "$url" && "$url" != \#* ]]; then
-                echo "正在处理 TXT 源: $url"
-                # 直接追加下载内容，TXT格式不需要过滤文件头
-                curl -sL "$url" >> all_live.txt
+            while IFS= read -r line || [ -n "$line" ]; do
+              if [[ -n "$line" && "$line" != \#* ]]; then
+                # 核心修复：只取纯 URL
+                url="${line##*,}"
+                url=$(echo "$url" | tr -d '\r' | xargs)
+                
+                echo "正在下载 TXT 源: $url"
+                curl --fail -sL "$url" >> all_live.txt || echo "⚠️ 下载失败，跳过: $url"
                 echo "" >> all_live.txt
               fi
             done < list_txt.txt
           fi
 
       # ==========================================
-      # 统一替换内网代理地址
+      # 替换内网代理地址
       # ==========================================
-      - name: 替换为我的 UDPXY 代理地址 (192.168.1.253:8001)
+      - name: 替换为我的 UDPXY 代理地址
         run: |
-          # 分别对两个文件进行正则替换，互不影响
           sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.m3u
           sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.txt
           
-          # 删除空行，保持文件整洁
           sed -i '/^$/d' all_live.m3u
           sed -i '/^$/d' all_live.txt
           echo "✅ 代理地址替换完成！"
@@ -79,7 +82,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add all_live.m3u all_live.txt
           if ! git diff --staged --quiet; then
-            git commit -m "独立更新并合并 M3U 和 TXT 源"
+            git commit -m "修复网址提取逻辑并合并源"
             git push
-            echo "✅ 两个独立文件已更新成功。"
+            echo "✅ 修复成功，文件已更新。"
           fi
