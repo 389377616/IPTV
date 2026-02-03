@@ -2,7 +2,7 @@ name: Update IPTV Sources Separately
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # 每天北京时间早上 6 点自动运行
+    - cron: '0 */2 * * *' # 每2小时自动运行
   workflow_dispatch:     # 允许手动触发
 
 permissions:
@@ -62,18 +62,18 @@ jobs:
           fi
 
       # ==========================================
-      # 替换和补全内网代理地址 (核心修复)
+      # 替换和补全内网代理地址 (已修复特殊字符冲突)
       # ==========================================
       - name: 替换和补全 UDPXY 代理地址
         run: |
-          # 1. 把别人已有的 HTTP 代理，替换为你的内网地址 192.168.1.253:8001
-          sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.m3u
-          sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.txt
+          # 1. 把别人已有的 HTTP 代理，替换为你的内网地址 (使用 @ 作为 sed 分隔符)
+          sed -E -i 's@http://[^/]+/@http://192.168.1.253:8001/@g' all_live.m3u
+          sed -E -i 's@http://[^/]+/@http://192.168.1.253:8001/@g' all_live.txt
 
           # 2. 把没有代理的纯净组播源 (rtp:// 或 udp://)，加上你的内网前缀
-          # 正则解释：匹配行首(^)或逗号(,)后面的 rtp/udp，加上 http://192.168.1.253:8001/rtp/ (或 udp/)
-          sed -E -i 's|(^|,)(rtp|udp)://|\1http://192.168.1.253:8001/\2/|g' all_live.m3u
-          sed -E -i 's|(^|,)(rtp|udp)://|\1http://192.168.1.253:8001/\2/|g' all_live.txt
+          # 匹配行首(^)或逗号(,)后面的 rtp/udp，加上代理前缀 (完美兼容正则 | 符号)
+          sed -E -i 's@(^|,)(rtp|udp)://@\1http://192.168.1.253:8001/\2/@g' all_live.m3u
+          sed -E -i 's@(^|,)(rtp|udp)://@\1http://192.168.1.253:8001/\2/@g' all_live.txt
           
           # 3. 清理文件中的空行，让文件更紧凑
           sed -i '/^$/d' all_live.m3u
@@ -89,7 +89,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add all_live.m3u all_live.txt
           if ! git diff --staged --quiet; then
-            git commit -m "自动更新：聚合源并修正 UDPXY 代理"
+            git commit -m "自动更新：聚合源并修正 UDPXY 代理 (已修复语法冲突)"
             git push
             echo "✅ 两个独立文件已更新成功并推送。"
           else
