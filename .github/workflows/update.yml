@@ -2,8 +2,8 @@ name: Update IPTV Sources Separately
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
-  workflow_dispatch:
+    - cron: '0 */2 * * *' # 每天北京时间早上 6 点自动运行
+  workflow_dispatch:     # 允许手动触发
 
 permissions:
   contents: write
@@ -25,15 +25,15 @@ jobs:
           
           if [ -f list_m3u.txt ]; then
             while IFS= read -r line || [ -n "$line" ]; do
-              # 过滤空行和注释
+              # 过滤空行和以 # 开头的注释行
               if [[ -n "$line" && "$line" != \#* ]]; then
-                # 核心修复：只取最后一个逗号后面的内容作为纯 URL
+                # 智能提取：只取最后一个逗号后面的内容作为纯 URL
                 url="${line##*,}"
                 # 清除可能存在的 Windows 回车符(\r)和首尾空格
                 url=$(echo "$url" | tr -d '\r' | xargs)
                 
                 echo "正在下载 M3U 源: $url"
-                # 增加 --fail 参数，如果网址失效不中断整个流程
+                # 下载并过滤掉多余的 #EXTM3U 头，防止格式损坏。增加 --fail 防止坏链中断流程。
                 curl --fail -sL "$url" | grep -v "#EXTM3U" >> all_live.m3u || echo "⚠️ 下载失败，跳过: $url"
                 echo "" >> all_live.m3u
               fi
@@ -41,7 +41,7 @@ jobs:
           fi
 
       # ==========================================
-      # 管道 2：处理 TXT (同样支持 "名字,网址" 格式)
+      # 管道 2：处理 TXT (支持 "名字,网址" 格式)
       # ==========================================
       - name: 合并 TXT 源文件
         run: |
@@ -50,7 +50,7 @@ jobs:
           if [ -f list_txt.txt ]; then
             while IFS= read -r line || [ -n "$line" ]; do
               if [[ -n "$line" && "$line" != \#* ]]; then
-                # 核心修复：只取纯 URL
+                # 智能提取纯 URL
                 url="${line##*,}"
                 url=$(echo "$url" | tr -d '\r' | xargs)
                 
@@ -62,16 +62,23 @@ jobs:
           fi
 
       # ==========================================
-      # 替换内网代理地址
+      # 替换和补全内网代理地址 (核心修复)
       # ==========================================
-      - name: 替换为我的 UDPXY 代理地址
+      - name: 替换和补全 UDPXY 代理地址
         run: |
+          # 1. 把别人已有的 HTTP 代理，替换为你的内网地址 192.168.1.253:8001
           sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.m3u
           sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.txt
+
+          # 2. 把没有代理的纯净组播源 (rtp:// 或 udp://)，加上你的内网前缀
+          # 正则解释：匹配行首(^)或逗号(,)后面的 rtp/udp，加上 http://192.168.1.253:8001/rtp/ (或 udp/)
+          sed -E -i 's|(^|,)(rtp|udp)://|\1http://192.168.1.253:8001/\2/|g' all_live.m3u
+          sed -E -i 's|(^|,)(rtp|udp)://|\1http://192.168.1.253:8001/\2/|g' all_live.txt
           
+          # 3. 清理文件中的空行，让文件更紧凑
           sed -i '/^$/d' all_live.m3u
           sed -i '/^$/d' all_live.txt
-          echo "✅ 代理地址替换完成！"
+          echo "✅ 代理地址替换和组播源补全完成！"
 
       # ==========================================
       # 提交保存
@@ -82,7 +89,9 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add all_live.m3u all_live.txt
           if ! git diff --staged --quiet; then
-            git commit -m "修复网址提取逻辑并合并源"
+            git commit -m "自动更新：聚合源并修正 UDPXY 代理"
             git push
-            echo "✅ 修复成功，文件已更新。"
+            echo "✅ 两个独立文件已更新成功并推送。"
+          else
+            echo "⚠️ 文件无变动，无需推送。"
           fi
