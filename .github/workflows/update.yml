@@ -2,7 +2,7 @@ name: Update IPTV Sources Separately
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # 每2小时自动运行
+    - cron: '0 */2 * * *' # 每天北京时间早上 6 点自动运行
   workflow_dispatch:     # 允许手动触发
 
 permissions:
