@@ -1,46 +1,85 @@
-name: Update IPTV Sources
+name: Update IPTV Sources Separately
 
 on:
   schedule:
-    # 定时任务：每天北京时间早上 6 点自动运行 (GitHub 使用 UTC 时间，比北京时间晚 8 小时)
     - cron: '0 */2 * * *'
-  workflow_dispatch: # 允许你在 GitHub 页面上手动点击按钮运行
+  workflow_dispatch:
 
 permissions:
-  contents: write # 赋予 GitHub Actions 写入仓库的权限，否则无法保存文件
+  contents: write
 
 jobs:
   update-iptv:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检出代码 (Checkout)
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 下载直播源 (Download Source)
+      # ==========================================
+      # 管道 1：专门处理 M3U 格式
+      # ==========================================
+      - name: 合并 M3U 源文件
         run: |
-          # 【注意】请将下面引号里的 URL 替换为你真正想要抓取的直播源网址
-          # -o iptv.m3u 表示将下载的内容保存到名为 iptv.m3u 的文件中
-          curl -L -o iptv.m3u "https://example.com/other-people-source.m3u"
+          # 1. 写入标准的 M3U 文件头
+          echo "#EXTM3U" > all_live.m3u
+          
+          # 2. 逐个下载 list_m3u.txt 中的链接
+          if [ -f list_m3u.txt ]; then
+            while IFS= read -r url || [ -n "$url" ]; do
+              if [[ -n "$url" && "$url" != \#* ]]; then
+                echo "正在处理 M3U 源: $url"
+                # 下载并严格过滤掉多余的 #EXTM3U 头，防止格式损坏
+                curl -sL "$url" | grep -v "#EXTM3U" >> all_live.m3u
+                echo "" >> all_live.m3u
+              fi
+            done < list_m3u.txt
+          fi
 
-      - name: 替换为我的 UDPXY 代理地址 (Replace UDPXY)
+      # ==========================================
+      # 管道 2：专门处理 TXT 格式
+      # ==========================================
+      - name: 合并 TXT 源文件
         run: |
-          # 这里会自动查找文件里的任意代理地址，并替换为你的 192.168.1.253:8001
-          sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' iptv.m3u
+          # 1. 清空或创建 TXT 文件
+          > all_live.txt
+          
+          # 2. 逐个下载 list_txt.txt 中的链接
+          if [ -f list_txt.txt ]; then
+            while IFS= read -r url || [ -n "$url" ]; do
+              if [[ -n "$url" && "$url" != \#* ]]; then
+                echo "正在处理 TXT 源: $url"
+                # 直接追加下载内容，TXT格式不需要过滤文件头
+                curl -sL "$url" >> all_live.txt
+                echo "" >> all_live.txt
+              fi
+            done < list_txt.txt
+          fi
+
+      # ==========================================
+      # 统一替换内网代理地址
+      # ==========================================
+      - name: 替换为我的 UDPXY 代理地址 (192.168.1.253:8001)
+        run: |
+          # 分别对两个文件进行正则替换，互不影响
+          sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.m3u
+          sed -E -i 's|http://[^/]+/|http://192.168.1.253:8001/|g' all_live.txt
+          
+          # 删除空行，保持文件整洁
+          sed -i '/^$/d' all_live.m3u
+          sed -i '/^$/d' all_live.txt
           echo "✅ 代理地址替换完成！"
 
-      - name: 提交并推送更改 (Commit and Push)
+      # ==========================================
+      # 提交保存
+      # ==========================================
+      - name: 提交并推送
         run: |
-          # 设置虚拟机器人的提交身份
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
-          # 检查文件是否有更新，如果有，则提交并推送到仓库
-          if [[ -n $(git status -s) ]]; then
-            git add iptv.m3u
-            git commit -m "自动更新直播源并替换内网代理地址"
+          git add all_live.m3u all_live.txt
+          if ! git diff --staged --quiet; then
+            git commit -m "独立更新并合并 M3U 和 TXT 源"
             git push
-            echo "✅ 文件已更新并推送成功！"
-          else
-            echo "⚠️ 直播源没有变化，跳过提交。"
+            echo "✅ 两个独立文件已更新成功。"
           fi
