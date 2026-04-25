@@ -1,4 +1,4 @@
-name: 独立更新 IPTV 直播源 # 工作流的全局名称
+name: 独立更新 IPTV 直播源
 
 on:
   schedule:
@@ -9,7 +9,7 @@ permissions:
   contents: write         # 赋予写入仓库的权限，用于提交最后生成的文件
 
 jobs:
-  update-iptv:            # 任务 ID (必须为英文字符或下划线)
+  update-iptv:            # 任务 ID (必须保持英文)
     name: 更新电视直播源    # 任务在控制台显示的中文名称
     runs-on: ubuntu-latest # 运行环境：使用最新版 Ubuntu 虚拟机
 
@@ -118,7 +118,8 @@ jobs:
           
           # 检查文件是否有变动，如果有变动则提交并推送到云端
           if ! git diff --staged --quiet; then
-            git commit -m "自动更新：聚合直播源、修正内网代理并清理重复项"
+            # 👇 这里就是控制 GitHub 更新说明的地方，我加了 emoji 让它更显眼
+            git commit -m "✨ 自动更新：聚合直播源、修正内网代理并清理重复项"
             git push
             echo "✅ 两个独立的直播源文件已成功更新、去重并推送至仓库。"
           else
