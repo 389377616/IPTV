@@ -1,40 +1,41 @@
-name: Update IPTV Sources Separately
+name: 独立更新 IPTV 直播源 # 工作流的全局名称
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # 每天北京时间早上 6 点自动运行
-  workflow_dispatch:     # 允许手动触发
+    - cron: '0 */2 * * *' # 定时触发：每天北京时间早上 6 点等时间间隔自动运行
+  workflow_dispatch:      # 手动触发：允许在 GitHub Actions 页面点击按钮运行
 
 permissions:
-  contents: write
+  contents: write         # 赋予写入仓库的权限，用于提交最后生成的文件
 
 jobs:
-  update-iptv:
-    runs-on: ubuntu-latest
+  update-iptv:            # 任务 ID (必须为英文字符或下划线)
+    name: 更新电视直播源    # 任务在控制台显示的中文名称
+    runs-on: ubuntu-latest # 运行环境：使用最新版 Ubuntu 虚拟机
 
     steps:
-      - name: 检出代码
+      - name: 检出代码仓库
         uses: actions/checkout@v4
 
       # ==========================================
       # 管道 1：处理 M3U (支持 "名字,网址" 格式)
       # ==========================================
-      - name: 合并 M3U 源文件
+      - name: 合并 M3U 格式的源文件
         run: |
           echo "#EXTM3U" > all_live.m3u
           
           if [ -f list_m3u.txt ]; then
             while IFS= read -r line || [ -n "$line" ]; do
-              # 过滤空行和以 # 开头的注释行
+              # 过滤空行和以 # 号开头的注释行
               if [[ -n "$line" && "$line" != \#* ]]; then
-                # 智能提取：只取最后一个逗号后面的内容作为纯 URL
+                # 智能提取：只截取最后一个逗号后面的内容作为纯网址链接
                 url="${line##*,}"
-                # 清除可能存在的 Windows 回车符(\r)和首尾空格
+                # 清除链接中可能存在的 Windows 回车符(\r)和首尾空格
                 url=$(echo "$url" | tr -d '\r' | xargs)
                 
-                echo "正在下载 M3U 源: $url"
-                # 下载并过滤掉多余的 #EXTM3U 头，防止格式损坏。增加 --fail 防止坏链中断流程。
-                curl --fail -sL "$url" | grep -v "#EXTM3U" >> all_live.m3u || echo "⚠️ 下载失败，跳过: $url"
+                echo "正在下载 M3U 直播源: $url"
+                # 下载并过滤掉多余的 #EXTM3U 头部标识，防止格式损坏。增加 --fail 防止死链中断整个流程。
+                curl --fail -sL "$url" | grep -v "#EXTM3U" >> all_live.m3u || echo "⚠️ 下载失败，已跳过此链接: $url"
                 echo "" >> all_live.m3u
               fi
             done < list_m3u.txt
@@ -43,55 +44,83 @@ jobs:
       # ==========================================
       # 管道 2：处理 TXT (支持 "名字,网址" 格式)
       # ==========================================
-      - name: 合并 TXT 源文件
+      - name: 合并 TXT 格式的源文件
         run: |
           > all_live.txt
           
           if [ -f list_txt.txt ]; then
             while IFS= read -r line || [ -n "$line" ]; do
+              # 过滤空行和注释行
               if [[ -n "$line" && "$line" != \#* ]]; then
-                # 智能提取纯 URL
+                # 智能提取纯网址链接
                 url="${line##*,}"
                 url=$(echo "$url" | tr -d '\r' | xargs)
                 
-                echo "正在下载 TXT 源: $url"
-                curl --fail -sL "$url" >> all_live.txt || echo "⚠️ 下载失败，跳过: $url"
+                echo "正在下载 TXT 直播源: $url"
+                curl --fail -sL "$url" >> all_live.txt || echo "⚠️ 下载失败，已跳过此链接: $url"
                 echo "" >> all_live.txt
               fi
             done < list_txt.txt
           fi
 
       # ==========================================
-      # 替换和补全内网代理地址 (已修复特殊字符冲突)
+      # 替换和补全内网代理地址
       # ==========================================
-      - name: 替换和补全 UDPXY 代理地址
+      - name: 替换和补全 UDPXY 局域网代理地址
         run: |
-          # 1. 把别人已有的 HTTP 代理，替换为你的内网地址 (使用 @ 作为 sed 分隔符)
+          # 1. 将他人提供的源文件中已有的 HTTP 代理，强行替换为你的内网地址 (使用 @ 作为分隔符防止冲突)
           sed -E -i 's@http://[^/]+/@http://192.168.1.253:8001/@g' all_live.m3u
           sed -E -i 's@http://[^/]+/@http://192.168.1.253:8001/@g' all_live.txt
 
-          # 2. 把没有代理的纯净组播源 (rtp:// 或 udp://)，加上你的内网前缀
-          # 匹配行首(^)或逗号(,)后面的 rtp/udp，加上代理前缀 (完美兼容正则 | 符号)
+          # 2. 将原本没有代理的纯净组播源 (rtp:// 或 udp://开头)，自动加上你的内网前缀
+          # 匹配行首(^)或逗号(,)后面的 rtp/udp，加上代理前缀
           sed -E -i 's@(^|,)(rtp|udp)://@\1http://192.168.1.253:8001/\2/@g' all_live.m3u
           sed -E -i 's@(^|,)(rtp|udp)://@\1http://192.168.1.253:8001/\2/@g' all_live.txt
           
-          # 3. 清理文件中的空行，让文件更紧凑
+          # 3. 清理文件中的所有空行，让最终输出的文件更加整洁紧凑
           sed -i '/^$/d' all_live.m3u
           sed -i '/^$/d' all_live.txt
-          echo "✅ 代理地址替换和组播源补全完成！"
+          echo "✅ 代理地址替换和组播源补全任务已完成！"
+
+      # ==========================================
+      # 文件去重操作
+      # ==========================================
+      - name: 对合并后的文件进行深度去重
+        run: |
+          echo "开始清理重复的直播源..."
+          
+          # 1. TXT 格式去重：使用 awk 命令，按整行的文本内容去重，同时保留原有列表的先后顺序
+          if [ -f all_live.txt ]; then
+            awk '!seen[$0]++' all_live.txt > tmp_live.txt
+            mv tmp_live.txt all_live.txt
+            echo "✅ TXT 格式文件去重完毕"
+          fi
+
+          # 2. M3U 格式去重：由于 M3U 是两行代表一个频道，因此成对提取频道名(#EXTINF)和紧接着的网址，以网址作为唯一标识进行去重
+          if [ -f all_live.m3u ]; then
+            echo "#EXTM3U" > tmp_live.m3u
+            awk '/^#EXTINF/ {ext=$0; getline url; if (!seen[url]++) {print ext"\n"url}}' all_live.m3u >> tmp_live.m3u
+            mv tmp_live.m3u all_live.m3u
+            echo "✅ M3U 格式文件去重完毕"
+          fi
 
       # ==========================================
       # 提交保存
       # ==========================================
-      - name: 提交并推送
+      - name: 将修改后的文件提交并推送到代码仓库
         run: |
+          # 配置虚拟机器人的身份信息
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # 添加生成的两个文件到暂存区
           git add all_live.m3u all_live.txt
+          
+          # 检查文件是否有变动，如果有变动则提交并推送到云端
           if ! git diff --staged --quiet; then
-            git commit -m "自动更新：聚合源并修正 UDPXY 代理 (已修复语法冲突)"
+            git commit -m "自动更新：聚合直播源、修正内网代理并清理重复项"
             git push
-            echo "✅ 两个独立文件已更新成功并推送。"
+            echo "✅ 两个独立的直播源文件已成功更新、去重并推送至仓库。"
           else
-            echo "⚠️ 文件无变动，无需推送。"
+            echo "⚠️ 直播源内容没有任何变动，无需执行推送操作。"
           fi
