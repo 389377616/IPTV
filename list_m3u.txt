@@ -3,3 +3,6 @@ Taosky,https://raw.githubusercontent.com/Taosky/iptv/refs/heads/main/%E7%9B%B4%E
 gw826943555,https://raw.githubusercontent.com/gw826943555/IPTV/refs/heads/main/IPTV.m3u
 loa123,https://raw.githubusercontent.com/loa123/JiangSu-iTV/refs/heads/master/JiangSu-%20IPTV.m3u8
 lvsuhan,https://raw.githubusercontent.com/lvsuhan/mianyu_iptv/refs/heads/main/mianyu.m3u
+wxq684007,https://raw.githubusercontent.com/wxq684007/gx/refs/heads/main/JSTV.m3u
+stevehu88,https://raw.githubusercontent.com/stevehu88/IPTV/refs/heads/main/iptv_hd.m3u
+SuNingXJBT,https://raw.githubusercontent.com/SuNingXJBT/NanJingIPTV/refs/heads/main/%E5%8D%97%E4%BA%AC%E7%94%B5%E4%BF%A1iptv%E7%BB%84%E6%92%AD%E5%B8%A6%E5%9B%9E%E6%94%BE%E5%8F%82%E6%95%B0.m3u
